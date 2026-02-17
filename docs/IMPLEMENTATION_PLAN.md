@@ -69,7 +69,7 @@ Task list for implementing the MVP as defined in [MVP_SPEC.md](./MVP_SPEC.md).
 
 - [ ] Create `llm/client.py` wrapping `anthropic` SDK
 - [ ] Create `llm/ranker.py`:
-  - Input: `list[Item]` + query string
+  - Input: `list[Item]` + query string + user ranking prompt on how to rank (usually loaded from config)
   - Prompt LLM for score (0-10) + short rationale per item
   - Dedupe by URL
   - Return sorted list (highest score first)
