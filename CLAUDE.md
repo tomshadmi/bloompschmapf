@@ -1,6 +1,8 @@
-# AGENTS.md
+# CLAUDE.md
 
-> **SYNC NOTE:** This file mirrors CLAUDE.md. When updating either file, update both to keep them in sync.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+> **SYNC NOTE:** This file mirrors AGENTS.md. When updating either file, update both to keep them in sync.
 
 ---
 
