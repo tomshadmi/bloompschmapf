@@ -11,10 +11,9 @@ AgentConfig      - YAML config defining: query, source, notifier, time window
 Source           - Protocol: search(query, days) -> list[Item]
 Item             - Dataclass: url, title, snippet, published_date, source_name, score, rationale
 Ranker           - LLM-based: scores items with numeric score + short rationale
-Summarizer       - LLM-based: produces concise per-item summaries
-Renderer         - Formats ranked + summarized items into Telegram-friendly report
-Notifier         - Protocol: send(report) -> None
-Pipeline         - Orchestrates: source.search() -> rank() -> summarize() -> render() -> notifier.send()
+Summarizer       - LLM-based: produces 2-3 bullet summary of the entire result set
+Notifier         - Protocol: render(items) -> formatted_msg, send(msg) -> None (coupled rendering)
+Pipeline         - Orchestrates: source.search() -> rank() -> summarize() -> notifier.render() -> notifier.send()
 ```
 
 ---
@@ -22,25 +21,22 @@ Pipeline         - Orchestrates: source.search() -> rank() -> summarize() -> ren
 ## Data Flow
 
 ```
-┌─────────────┐     ┌────────┐     ┌──────────┐     ┌────────────┐     ┌───────────┐
-│ AgentConfig │────▶│ Source │────▶│  Ranker  │────▶│ Summarizer │────▶│ Renderer  │
-└─────────────┘     └────────┘     └──────────┘     └────────────┘     └───────────┘
-                         │              │                  │                  │
-                    list[Item]    scored items      summarized items     report: str
-                                  + rationales                                │
-                                                                              ▼
-                                                                       ┌───────────┐
-                                                                       │ Notifier  │
-                                                                       │(Telegram) │
-                                                                       └───────────┘
+┌─────────────┐     ┌────────┐     ┌──────────┐     ┌────────────┐     ┌───────────────────┐
+│ AgentConfig │────▶│ Source │────▶│  Ranker  │────▶│ Summarizer │────▶│     Notifier      │
+└─────────────┘     └────────┘     └──────────┘     └────────────┘     │ (render + send)   │
+                         │              │                  │           └───────────────────┘
+                    list[Item]    scored items       2-3 bullet              │
+                                  + rationales        summary           formatted_msg
+                                                                        for channel
 ```
 
-1. Load `AgentConfig` from YAML
-2. `Source.search(query, days)` → fetch items from Tavily
-3. `Ranker.rank(items, query)` → LLM scores each item (0-10) + short rationale, dedupe, sort
-4. `Summarizer.summarize(ranked_items)` → LLM produces 1-2 bullet summaries per item
-5. `Renderer.render(items, config)` → Telegram-friendly markdown report with metadata footer
-6. `Notifier.send(report)` → deliver via Telegram bot
+1. Log verbose startup info (config loaded, run id, query, time window)
+2. Load `AgentConfig` from YAML
+3. `Source.search(query, days)` → fetch items from Tavily
+4. `Ranker.rank(items, query)` → LLM scores each item (0-10) + short rationale, dedupe, sort
+5. `Summarizer.summarize(ranked_items)` → LLM produces 2-3 bullet summary of entire list
+6. `Notifier.render(items, summary, config)` → channel-specific formatted message
+7. `Notifier.send(msg)` → deliver via Telegram bot
 
 ---
 
@@ -48,13 +44,13 @@ Pipeline         - Orchestrates: source.search() -> rank() -> summarize() -> ren
 
 ### In Scope
 - **1 source**: Tavily web search API
-- **1 notifier**: Telegram bot
+- **1 notifier**: Telegram bot (with coupled rendering)
 - **CLI only**: `bloompschmapf run config.yaml`
 - **LLM ranking**: score (0-10) + rationale per item, dedupe by URL
-- **LLM summarization**: 1-2 bullet summary per item
+- **LLM summarization**: 2-3 bullet summary of the entire result list (not per-item)
 - **YAML config**: agent name, query, source config, notifier config, time window (days), LLM config
-- **Telegram markdown output**: title, link, bullets, date, relevance score
-- **Structured logging**: stdout, run id, item counts, LLM token usage
+- **Telegram markdown output**: title, link, date, relevance score, holistic summary
+- **Structured logging**: verbose startup logs (config, run id, query), item counts, LLM token usage
 - **Tests**: unit, integration, and e2e (see Testing section)
 
 ### Out of Scope (for MVP)
@@ -107,19 +103,18 @@ bloompschmapf/
 │       │   ├── __init__.py
 │       │   ├── client.py    # LLM client wrapper
 │       │   ├── ranker.py    # LLM-based ranking
-│       │   └── summarizer.py # LLM-based summarization
-│       ├── renderer.py      # Telegram markdown output
+│       │   └── summarizer.py # LLM-based summarization (holistic)
 │       └── notifiers/
 │           ├── __init__.py
-│           ├── base.py      # Notifier protocol
-│           └── telegram.py  # Telegram bot notifier
+│           ├── base.py      # Notifier protocol (render + send)
+│           └── telegram.py  # Telegram notifier (renders markdown + sends)
 ├── tests/
 │   ├── unit/                # Fast, isolated tests
 │   │   ├── test_config.py
 │   │   ├── test_models.py
 │   │   ├── test_ranker.py
 │   │   ├── test_summarizer.py
-│   │   └── test_renderer.py
+│   │   └── test_telegram_notifier.py  # Notifier render + send
 │   ├── integration/         # Component interaction, mocked HTTP/LLM
 │   │   ├── test_pipeline.py
 │   │   ├── test_tavily.py
@@ -171,7 +166,7 @@ notifier:
 - **Examples**:
   - Config validation (valid/invalid YAML)
   - Item deduplication logic
-  - Renderer output format
+  - Notifier render output format (Telegram markdown)
   - Score parsing from LLM response
 
 ### Integration Tests (`tests/integration/`)
@@ -179,9 +174,9 @@ notifier:
 - **Mocking**: HTTP via `respx`, LLM responses via fixtures
 - **Speed**: Medium (<10s total)
 - **Examples**:
-  - Pipeline: source → ranker → summarizer → renderer
+  - Pipeline: source → ranker → summarizer → notifier (render + send)
   - Tavily client with mocked responses
-  - Telegram notifier with mocked API
+  - Telegram notifier render + send with mocked API
 
 ### E2E Tests (`tests/e2e/`)
 - **What**: Full pipeline with real APIs
@@ -227,10 +222,11 @@ BLOOMPSCHMAPF_TELEGRAM_CHAT_ID=123456789
 ## Done When
 
 - [ ] `bloompschmapf run agents/example.yaml` executes end-to-end
+- [ ] Verbose startup logs (config loaded, run id, query, time window)
 - [ ] Fetches results from Tavily API
 - [ ] LLM ranks items with score + rationale
-- [ ] LLM summarizes top items (1-2 bullets each)
-- [ ] Outputs Telegram-friendly markdown report
+- [ ] LLM summarizes result list (2-3 bullets for entire set)
+- [ ] Notifier renders channel-specific output (Telegram markdown)
 - [ ] Sends via Telegram bot
 - [ ] Fails fast with clear error on bad config or missing env vars
 - [ ] Unit tests pass with >80% coverage
