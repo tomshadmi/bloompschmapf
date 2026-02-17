@@ -44,7 +44,7 @@ Task list for implementing the MVP as defined in [MVP_SPEC.md](./MVP_SPEC.md).
 
 - [ ] Create `models.py` with `Item` dataclass:
   - `url`, `title`, `snippet`, `published_date`, `source_name`
-  - `score`, `rationale`, `summary` (populated later in pipeline)
+  - `score`, `rationale`
 - [ ] Create `config.py` with `AgentConfig` pydantic model:
   - Validate YAML structure
   - Support env var overrides for secrets
@@ -80,8 +80,7 @@ Task list for implementing the MVP as defined in [MVP_SPEC.md](./MVP_SPEC.md).
 
 - [ ] Create `llm/summarizer.py`:
   - Input: ranked `list[Item]`
-  - Prompt LLM for 1-2 bullet summary per item
-  - Update `Item.summary` field
+  - Prompt LLM for 2-3 bullet summary of the entire list
   - Never fabricate URLs (summaries reference existing item data only)
 
 #### #6 Implement renderer
